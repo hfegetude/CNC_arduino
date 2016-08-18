@@ -17,8 +17,18 @@
 //Function : step . function: to control the direction of the stepper motor , the number of steps .
 //Parameters : dir direction control , dirPin corresponding stepper motor DIR pin , stepperPin corresponding stepper motor " step " pin , Step number of step of no return value.
 */
+//Define com protocol
+#define OK 0x00
+#define PEN_MODE 0x00
+#define LINE_MODE =0xFF
+//PEN_MODE protocol
+#define CIRCLE_REQUEST 0x00
+#define LINE_REQUEST 0xFF
+#define ACK 0x01
+#define FINISH 0x02
 
 
+#define DEBUG 0
 class LaserPrinter{
 
  private:
@@ -29,6 +39,14 @@ class LaserPrinter{
  public:
   LaserPrinter(){
    current_width = current_length = laser =0;
+   pinMode(X_DIR, OUTPUT); 
+   pinMode(X_STP, OUTPUT);
+   pinMode(Y_DIR, OUTPUT); 
+   pinMode(Y_STP, OUTPUT);
+   pinMode(LASER, OUTPUT); 
+   pinMode(9, INPUT);
+   pinMode(EN, OUTPUT);
+   digitalWrite(EN, LOW);
    digitalWrite(LASER, LOW);
   }
 
@@ -69,12 +87,11 @@ class LaserPrinter{
   bool step(boolean dir, byte pin_stp, byte pin_dir){
     if( X_STP == pin_stp){
        if(dir && (current_width >= MAX_WIDTH)){
-        Serial.println("error1");
         return false;
       }
     
       if( not dir && (current_width < 0)){
-        Serial.println("error2");
+       
 
         return false;
       }
@@ -87,13 +104,13 @@ class LaserPrinter{
     }
     else{
       if(not dir && (current_length >= MAX_LENGTH)){
-         Serial.println("error3");
+      
 
         return false;
       }
     
       if( dir && (current_length < 0)){
-        Serial.println("error4");
+       
 
         return false;
       }
@@ -111,10 +128,12 @@ class LaserPrinter{
     delayMicroseconds(800);
     digitalWrite(pin_stp, LOW);
     delayMicroseconds(800);
-    Serial.print("current position: width: ");
-    Serial.print(current_width);
-    Serial.print(" length: ");
-    Serial.println(current_length);
+    #ifdef
+      Serial.print("current position: width: ");
+      Serial.print(current_width);
+      Serial.print(" length: ");
+      Serial.println(current_length);
+    #endif
     return true;
   }
 
@@ -131,7 +150,105 @@ class LaserPrinter{
   return step(DIR_FORW,Y_STP, Y_DIR);
   }
   
- 
+  bool MoveTo(int l, int w){
+    
+    while(not InWidth(w) ) {
+      if(CurrentWidth() > w){
+        if(not step_left()) return false;
+      }
+      
+      else{
+        if(not step_right()) return false;
+      }
+      delayMicroseconds(300);
+     }
+    while(not InLength(l) ) {
+      if(CurrentLength() >l) {
+        if(not step_backward()) return false;
+      }
+      else{
+        if(not step_forward())  return false;
+      }
+      delayMicroseconds(300);
+     }
+     return true;
+     
+  }
+  bool DrawCircle(int Radius, int c_l, int c_w ,  double initial_angle=0.0, double final_angle=2*M_PI){
+    int w, l;
+    if(final_angle < initial_angle){
+        initial_angle +=2*M_PI; 
+      }
+    w = c_w+(Radius*cos(initial_angle));
+    l = c_l+(Radius*sin(initial_angle));
+    if (not MoveTo(l, w)){
+       return false;
+    }
+    toggle_laser();
+    delay(50);
+    for(double angle = initial_angle ; angle<final_angle; angle +=M_PI/60.0  ){
+      
+      w = c_w+(Radius*cos(angle));
+      l = c_l+(Radius*sin(angle));
+      
+       if (not MoveTo(l, w)){
+        return false;
+       }
+    }
+    toggle_laser();
+    return true;
+  }
+  bool DrawLine(int orig_l, int orig_w, int dest_l, int dest_w ){
+    int d_w = dest_w-orig_w;
+    int d_l = dest_l-orig_l;
+
+    //euclides alg's
+    int a, b, r;
+    if (abs(d_w) > abs( d_l)){
+      a=abs(d_w);
+      b=abs(d_l);
+    }
+    else{
+      a=abs(d_l);
+      b=abs(d_w);
+    }
+    if(b!=0){
+      r=a%b;
+      while(r>0){
+        a=b;
+        b=r;
+        r=a%b;
+      }
+    }
+    else
+      b=1;
+    d_w = d_w/b;
+    d_l = d_l/b;
+
+    MoveTo(orig_l, orig_w);
+    toggle_laser();
+    delay(50);
+
+    while(not InLength(dest_l) || not InWidth(dest_w)){
+      if (not MoveTo(CurrentLength()+d_l, CurrentWidth()+d_w)) return false;
+    }
+
+    toggle_laser();
+    return true;
+  }
+  bool ReturnLaser(){
+    while(not InOriginLength()){
+      if(not step_backward()){
+        return false;
+      }
+    }
+    while(not InOriginWidth()){
+      if(not step_left()){
+        return false;
+      }
+    }
+   return true;
+  }
 };
 
 
@@ -143,100 +260,37 @@ class LaserPrinter{
 void setup() 
 {  Serial.begin(9600);
   // The stepper motor used in the IO pin is set to output
-   pinMode(X_DIR, OUTPUT); 
-   pinMode(X_STP, OUTPUT);
-   pinMode(Y_DIR, OUTPUT); 
-   pinMode(Y_STP, OUTPUT);
-   pinMode(LASER, OUTPUT); 
-   pinMode(9, INPUT);
-   pinMode(EN, OUTPUT);
-   digitalWrite(EN, LOW);
+   
  
    LaserPrinter l1;
-    
- /*  for(int i = 0; i< 500; i++) {
-    l1.step_forward();
-    delayMicroseconds(10);
+   /*while(!Serial){
+    //Wait till serial is ready
    }
+*/
    
-  for(int i = 0; i< 370; i++) {
-    l1.step_right();
-    delayMicroseconds(10);
-  }
-  */
-  int w;
-  int l;
-
-  
- l1.toggle_laser();
-  delay(10);
-  for(double angle = 0; angle<2*M_PI; angle +=M_PI/60.0  ){
-    w = 50+(50.0*cos(angle));
-    l = 50+(50.0*sin(angle));
     
-    Serial.print("objective: width: ");
-    Serial.print(w);
-    Serial.print(" length: ");
-    Serial.println(l);
-    Serial.print(" angle: ");
-    Serial.println(angle);
-
-    
-    while(not l1.InWidth(w) ) {
-      if(l1.CurrentWidth() > w) l1.step_left();
-      else l1.step_right();
-      delayMicroseconds(300);
-     }
-    while(not l1.InLength(l) ) {
-      if(l1.CurrentLength() >l) l1.step_backward();
-      else l1.step_forward();
-      delayMicroseconds(300);
-     }
-  }
-
-   l1.toggle_laser();
-
-  /*while(not l1.InOriginLength()){
-    l1.step_backward();
-    delayMicroseconds(100);
-  }
-  while(not l1.InOriginWidth()){
-    l1.step_left();
-    delayMicroseconds(100);
-  }
-  */
 }
 
 void loop() 
 { 
+ /*
+ //Initial handshake
+ while(Serial.available() < 0){}
+ if(Serial.read() ==  OK){
+  //MODE SELECTION
+  if(Serial.read() == PEN_MODE){
+    Serial.write(OK);
+     if(Serial.read() == CIRCLE_REQUEST){
+      Serial.write(OK);
+      
+     }
+  }
+  else{
+    //Under construction
+  }
+ }
 
-
-  /*int i=0;
-  while(true){  
-  Serial.print("current pos: ");
-  Serial.println(i);
-  step(DIR_FORW, Y_DIR,  Y_STP,1) ;
-  delay(50);
-  i++;
-}
-  /*for(int i=0; i<200; i++){
-   step(DIR_FORW, X_DIR,  X_STP,1) ;
-   delay(500);
-  }
-  for(int i=0; i<200; i++){
-   step(DIR_FORW, Y_DIR,  Y_STP,1) ;
-   delay(500);
-  }
-  for(int i=0; i<200; i++){
-   step(DIR_BACK, X_DIR,  X_STP,1) ;
-   delay(500);
-  }
-  for(int i=0; i<200; i++){
-   step(DIR_BACK, Y_DIR,  Y_STP,1) ;
-   delay(500);
-  }
- */
- 
+  */
  
 }
 
